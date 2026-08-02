@@ -58,6 +58,8 @@ export function handleMove(gs: GameState, move: ArmyMove): MoveOutcome {
   return MoveOutcome.Safe;
 }
 
+
+
 export function commandMove(gs: GameState, words: string[]): ArmyMove {
   if (gs.isPaused()) {
     throw new Error("The game is paused, you cannot move units");
