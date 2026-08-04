@@ -3,14 +3,17 @@ import {
   clientWelcome,
   commandStatus,
   getInput,
+  getMaliciousLog,
   printClientHelp,
   printQuit,
 } from "../internal/gamelogic/gamelogic.js";
 import {
   AckType,
   declareAndBind,
+  publishGameLog,
   SimpleQueueType,
   subscribeJSON,
+  subscribeMsgPack,
 } from "../internal/pubsub/consume.js";
 import {
   ArmyMovesPrefix,
@@ -24,9 +27,13 @@ import { commandSpawn } from "../internal/gamelogic/spawn.js";
 import { GameState } from "../internal/gamelogic/gamestate.js";
 import { commandMove, handleMove } from "../internal/gamelogic/move.js";
 import { handlerMove, handlerPause, handlerWar } from "./handlers.js";
-import { publishJSON } from "../internal/pubsub/publish.js";
-import type { ArmyMove, RecognitionOfWar } from "../internal/gamelogic/gamedata.js";
+import { publishJSON, publishMsgPack } from "../internal/pubsub/publish.js";
+import type {
+  ArmyMove,
+  RecognitionOfWar,
+} from "../internal/gamelogic/gamedata.js";
 import { handleWar } from "../internal/gamelogic/war.js";
+import { writeLog, type GameLog } from "../internal/gamelogic/logs.js";
 
 async function main() {
   console.log("Starting Peril client...");
@@ -74,7 +81,22 @@ async function main() {
     `war`,
     `${WarRecognitionsPrefix}.*`,
     SimpleQueueType.Durable,
-    await handlerWar(gs),
+    await handlerWar(gs, publishChannel),
+  );
+
+  await subscribeMsgPack<GameLog>(
+    conn,
+    ExchangePerilTopic,
+    "game_logs",
+    `${GameLogSlug}.*`,
+    SimpleQueueType.Durable,
+    async (log: GameLog) => {
+      await writeLog(log);
+
+      process.stdout.write("> ");
+
+      return AckType.Ack;
+    },
   );
 
   while (true) {
@@ -103,9 +125,33 @@ async function main() {
       case "help":
         await printClientHelp();
         break;
-      case "spam":
-        console.log("Spamming not allowed yet!");
+      case "spam": {
+        if (words.length < 2) {
+          console.log("Usage: spam <n>");
+          break;
+        }
+
+        const countWord = words[1];
+
+        if (!countWord) {
+          console.log("Usage: spam <n>");
+          break;
+        }
+
+        const count = Number.parseInt(countWord, 10);
+
+        if (Number.isNaN(count)) {
+          console.log("Spam count must be an integer.");
+          break;
+        }
+
+        for (let i = 0; i < count; i++) {
+          await publishGameLog(publishChannel, username, getMaliciousLog());
+        }
+
+        console.log(`Published ${count} logs.`);
         break;
+      }
       case "quit":
         printQuit();
         return;
